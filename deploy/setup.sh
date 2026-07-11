@@ -60,7 +60,7 @@ echo ""
 echo "事前準備が完了しているか確認します。"
 echo ""
 
-read -p "Python 3.11 のインストールが完了していますか？ (yes/no): " py_ready
+read -p "Python 3.12 のインストールが完了していますか？ (yes/no): " py_ready
 if [ "$py_ready" != "yes" ]; then
     echo "先頭のコメントを参照して手順 1 を実施してください。"
     exit 1
@@ -84,25 +84,44 @@ echo ""
 
 cd "$APP_DIR"
 
-echo "=== 4. 仮想環境作成 & パッケージインストール ==="
+echo "=== 4. PostgreSQL 認証設定（ident → md5）==="
+PG_HBA=$(sudo find /var/lib/pgsql -name pg_hba.conf 2>/dev/null | head -1)
+if [ -z "$PG_HBA" ]; then
+    echo "ERROR: pg_hba.conf が見つかりません。PostgreSQL が正しくインストールされているか確認してください。"
+    exit 1
+fi
+echo "pg_hba.conf: $PG_HBA"
+sudo sed -i 's/\(host\s\+all\s\+all\s\+127\.0\.0\.1\/32\s\+\)ident/\1md5/' "$PG_HBA"
+sudo sed -i 's/\(host\s\+all\s\+all\s\+::1\/128\s\+\)ident/\1md5/' "$PG_HBA"
+sudo systemctl restart postgresql
+echo "PostgreSQL を md5 認証で再起動しました。"
+
+echo "=== 5. static ディレクトリ作成 ==="
+mkdir -p "$APP_DIR/static"
+
+echo "=== 6. 仮想環境作成 & パッケージインストール ==="
+if [ -d ".venv" ]; then
+    echo ".venv を再作成します（既存の .venv を削除）"
+    rm -rf .venv
+fi
 python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
-echo "=== 5. マイグレーション & 静的ファイル収集 ==="
+echo "=== 7. マイグレーション & 静的ファイル収集 ==="
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py collectstatic --noinput
 
-echo "=== 6. ログディレクトリ作成 ==="
+echo "=== 8. ログディレクトリ作成 ==="
 sudo mkdir -p "$LOG_DIR"
 sudo chown ec2-user:ec2-user "$LOG_DIR"
 
-echo "=== 7. systemd ユニットファイル配置 & 有効化 ==="
+echo "=== 9. systemd ユニットファイル配置 & 有効化 ==="
 sudo cp "$APP_DIR/deploy/schedule-app.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now schedule-app
 
-echo "=== 8. 動作確認 ==="
+echo "=== 10. 動作確認 ==="
 sleep 2
 sudo systemctl status schedule-app
 curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:8000/
