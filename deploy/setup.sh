@@ -51,7 +51,7 @@
 
 set -e
 
-APP_DIR="/opt/schedule-app"
+APP_DIR="/opt/app/schedule-app"
 LOG_DIR="/var/log/schedule-app"
 
 # 事前準備の確認
