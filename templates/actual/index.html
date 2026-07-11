@@ -1,0 +1,538 @@
+{% extends 'base.html' %}
+{% block title %}実績{% endblock %}
+{% block nav_actual %}active{% endblock %}
+
+{% block extra_head %}
+<style>
+  .stat-card { border-radius: 12px; background: #fff; border: 1px solid #e5e7eb; padding: 20px 24px; }
+  [data-bs-theme="dark"] .stat-card { background: #1e2431; border-color: #374151; }
+  .stat-label { font-size: 0.72rem; color: #6b7280; font-weight: 500; letter-spacing: 0.04em; }
+  .stat-value { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+  .stat-sub   { font-size: 0.85rem; color: #6b7280; }
+  .panel { border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; }
+  [data-bs-theme="dark"] .panel { background: #1e2431; border-color: #374151; }
+  .panel-header { font-size: 0.8rem; font-weight: 600; color: #4f46e5; border-left: 3px solid #4f46e5; padding-left: 8px; }
+  .hours-ctrl { display: flex; align-items: center; gap: 0; }
+  .hours-ctrl button { width: 32px; height: 36px; border: 1px solid #d1d5db; background: #f9fafb; font-size: 1rem; cursor: pointer; }
+  [data-bs-theme="dark"] .hours-ctrl button { background: #374151; border-color: #4b5563; color: #f3f4f6; }
+  .hours-ctrl button:first-child { border-radius: 6px 0 0 6px; }
+  .hours-ctrl button:last-child  { border-radius: 0 6px 6px 0; }
+  .hours-ctrl input { width: 72px; height: 36px; text-align: center; border: 1px solid #d1d5db; border-left: none; border-right: none; font-weight: 600; background: #fff; }
+  [data-bs-theme="dark"] .hours-ctrl input { background: #1e2431; border-color: #4b5563; color: #f3f4f6; }
+  .entry-row { padding: 12px 0; border-bottom: 1px solid #f3f4f6; }
+  [data-bs-theme="dark"] .entry-row { border-color: #374151; }
+  .entry-row:last-child { border-bottom: none; }
+  .entry-task { font-weight: 600; font-size: 0.9rem; }
+  .entry-proj { font-size: 0.75rem; color: #6b7280; }
+  .entry-hours { font-size: 1.1rem; font-weight: 700; min-width: 36px; text-align: right; }
+  .prog-bar-bg { height: 6px; border-radius: 3px; background: #e5e7eb; flex: 1; }
+  [data-bs-theme="dark"] .prog-bar-bg { background: #374151; }
+  .prog-bar-fill { height: 6px; border-radius: 3px; background: #4f46e5; transition: width 0.3s; }
+  .prog-pct { font-size: 0.8rem; font-weight: 600; min-width: 36px; text-align: right; color: #4f46e5; }
+  .sched-badge { font-size: 0.72rem; background: #ede9fe; color: #6d28d9; border-radius: 4px; padding: 1px 6px; }
+  [data-bs-theme="dark"] .sched-badge { background: #312e81; color: #c4b5fd; }
+  .add-btn { border: 1.5px dashed #d1d5db; border-radius: 8px; color: #6b7280; font-size: 0.85rem; padding: 8px; text-align: center; cursor: pointer; transition: all .15s; }
+  .add-btn:hover { border-color: #4f46e5; color: #4f46e5; background: #f5f3ff; }
+  .entry-row { cursor: pointer; transition: background .12s; }
+  .entry-row:hover { background: rgba(79,70,229,0.04); border-radius: 6px; }
+  .entry-row.is-editing { background: rgba(79,70,229,0.08); border-radius: 6px; outline: 1.5px solid #a5b4fc; }
+  .form-select, .form-control { font-size: 0.875rem; }
+  #progress-val { font-weight: 700; color: #4f46e5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>実績</h4>
+    <p class="text-secondary mb-0" style="font-size:.8rem;">日付ごとに、担当タスクへの工数と進捗を記録します</p>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <div class="d-flex align-items-center gap-1">
+      <label class="text-secondary small">対象日</label>
+      <input type="date" id="date-picker" class="form-control form-control-sm" value="{{ date|date:'Y-m-d' }}" style="width:160px;">
+    </div>
+    <div class="d-flex align-items-center gap-1">
+      <i class="bi bi-person-circle text-secondary"></i>
+      <select id="member-select" class="form-select form-select-sm" style="width:120px;">
+        {% for m in members %}
+        <option value="{{ m.pk }}" {% if member and m.pk == member.pk %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- 統計カード -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="stat-label">登録工数 / 実績合計</div>
+      <div class="d-flex align-items-baseline gap-2 mt-1">
+        <span class="stat-value" id="stat-hours">{{ total_hours }}h</span>
+        <span class="stat-sub">/ 予定 {{ total_planned }}h</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="stat-label">登録タスク数</div>
+      <div class="d-flex align-items-baseline gap-2 mt-1">
+        <span class="stat-value" id="stat-count">{{ task_count }}</span>
+        <span class="stat-sub">件</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="stat-label">進捗平均</div>
+      <div class="d-flex align-items-center gap-3 mt-1">
+        <span class="stat-value" id="stat-prog">{{ avg_progress }}%</span>
+        <div class="prog-bar-bg flex-grow-1">
+          <div class="prog-bar-fill" id="stat-prog-bar" style="width:{{ avg_progress }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- メインエリア -->
+<div class="row g-3">
+
+  <!-- 左：実績入力 -->
+  <div class="col-12 col-lg-4">
+    <div class="panel p-4">
+      <div class="panel-header mb-3">実績を入力</div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">プロジェクト</label>
+        <select id="sel-project" class="form-select">
+          <option value="">-- 選択 --</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">フェーズ</label>
+        <select id="sel-phase" class="form-select" disabled>
+          <option value="">-- 選択 --</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">タスク</label>
+        <select id="sel-task" class="form-select" disabled>
+          <option value="">-- 選択 --</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">工数（時間）</label>
+        <div class="d-flex align-items-center gap-2">
+          <div class="hours-ctrl">
+            <button type="button" id="hours-dec">−</button>
+            <input type="number" id="hours-input" value="1" min="1" max="24" step="1">
+            <button type="button" id="hours-inc">＋</button>
+          </div>
+          <span class="text-secondary small">h（1h単位）</span>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label small fw-semibold d-flex justify-content-between">
+          <span>進捗</span><span id="progress-val">0%</span>
+        </label>
+        <input type="range" id="progress-range" class="form-range" min="0" max="100" step="5" value="0">
+      </div>
+
+      <div class="d-flex gap-2">
+        <button id="btn-save" class="btn btn-primary flex-grow-1">実績を登録</button>
+        <button id="btn-clear" class="btn btn-outline-secondary">クリア</button>
+      </div>
+      <div id="form-msg" class="mt-2 small"></div>
+    </div>
+  </div>
+
+  <!-- 右：登録済み実績 + 予定 -->
+  <div class="col-12 col-lg-8">
+    <div class="panel p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="fw-semibold">{{ date|date:"Y/m/d（D）" }} の登録実績</span>
+        <span class="text-secondary small">合計 <strong id="right-total">{{ total_hours }}h</strong></span>
+      </div>
+
+      <div id="actual-list">
+        {% for a in actuals %}
+        <div class="entry-row" data-pk="{{ a.pk }}" data-task-id="{{ a.task_id }}">
+          <div class="d-flex align-items-start gap-2">
+            <div class="flex-grow-1">
+              <div class="entry-task">{{ a.task.name }}</div>
+              <div class="entry-proj">{{ a.task.project.name }}</div>
+              <div class="d-flex align-items-center gap-2 mt-2">
+                <div class="prog-bar-bg">
+                  <div class="prog-bar-fill" style="width:{{ a.task.progress }}%"></div>
+                </div>
+                <span class="prog-pct">{{ a.task.progress }}%</span>
+              </div>
+            </div>
+            <div class="d-flex flex-column align-items-end gap-1">
+              <span class="entry-hours">{{ a.hours }}h</span>
+              <button class="btn btn-sm btn-link text-danger p-0 delete-btn" data-pk="{{ a.pk }}">
+                <i class="bi bi-x-circle"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- 予定 -->
+      {% if schedules %}
+      <div class="mt-3 pt-3 border-top">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="text-secondary small fw-semibold">予定</span>
+          <button id="btn-bulk-add" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-lightning-charge me-1"></i>予定通りに一括登録
+          </button>
+        </div>
+        {% for s in schedules %}
+        <div class="entry-row" data-sched-task-id="{{ s.task_id }}" data-sched-hours="{{ s.hours }}">
+          <div class="d-flex align-items-center gap-2">
+            <div class="flex-grow-1">
+              <div class="entry-task">{{ s.task.name }}</div>
+              <div class="entry-proj">{{ s.task.project.name }}</div>
+            </div>
+            <span class="sched-badge">予定 {{ s.hours }}h</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="add-btn mt-3" id="add-entry-btn">
+        <i class="bi bi-plus-circle me-1"></i>別のタスクの実績を追加
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- タスクデータ（JS用） -->
+<script id="task-data" type="application/json">{{ task_data_json|safe }}</script>
+<script id="actual-task-ids" type="application/json">{{ actual_task_ids_json|safe }}</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const TASKS = JSON.parse(document.getElementById('task-data').textContent);
+let registeredTaskIds = new Set(JSON.parse(document.getElementById('actual-task-ids').textContent));
+
+// 日付・メンバー切り替え → ページ遷移
+function navigate() {
+  const d = document.getElementById('date-picker').value;
+  const m = document.getElementById('member-select').value;
+  window.location.href = `?date=${d}&member_id=${m}`;
+}
+document.getElementById('date-picker').addEventListener('change', navigate);
+document.getElementById('member-select').addEventListener('change', navigate);
+
+// カスケードセレクト
+const selProject = document.getElementById('sel-project');
+const selPhase   = document.getElementById('sel-phase');
+const selTask    = document.getElementById('sel-task');
+
+selProject.addEventListener('change', () => {
+  const pid = parseInt(selProject.value);
+  selPhase.innerHTML = '<option value="">-- 選択 --</option>';
+  selTask.innerHTML  = '<option value="">-- 選択 --</option>';
+  selPhase.disabled = true;
+  selTask.disabled  = true;
+  if (!pid) return;
+
+  const phases = [...new Set(TASKS.filter(t => t.project_id === pid).map(t => JSON.stringify({phase: t.phase, label: t.phase_label})))];
+  const seen = new Set();
+  TASKS.filter(t => t.project_id === pid).forEach(t => {
+    if (!seen.has(t.phase)) {
+      seen.add(t.phase);
+      const opt = document.createElement('option');
+      opt.value = t.phase;
+      opt.textContent = t.phase_label;
+      selPhase.appendChild(opt);
+    }
+  });
+  selPhase.disabled = false;
+});
+
+selPhase.addEventListener('change', () => {
+  const pid   = parseInt(selProject.value);
+  const phase = selPhase.value;
+  selTask.innerHTML = '<option value="">-- 選択 --</option>';
+  selTask.disabled = true;
+  resetProgress();
+  if (!phase) return;
+
+  TASKS.filter(t => t.project_id === pid && t.phase === phase).forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    if (registeredTaskIds.has(t.id)) {
+      opt.textContent += ' ✓';
+      opt.style.color = '#6b7280';
+    }
+    selTask.appendChild(opt);
+  });
+  selTask.disabled = false;
+});
+
+selTask.addEventListener('change', () => {
+  const taskId = parseInt(selTask.value);
+  if (!taskId) { resetProgress(); return; }
+  const task = TASKS.find(t => t.id === taskId);
+  if (task) {
+    progRange.value = task.progress;
+    progVal.textContent = task.progress + '%';
+  }
+});
+
+function resetProgress() {
+  progRange.value = 0;
+  progVal.textContent = '0%';
+}
+
+// 工数 +/-
+const hoursInput = document.getElementById('hours-input');
+document.getElementById('hours-dec').addEventListener('click', () => {
+  hoursInput.value = Math.max(1, parseInt(hoursInput.value) - 1);
+});
+document.getElementById('hours-inc').addEventListener('click', () => {
+  hoursInput.value = Math.min(24, parseInt(hoursInput.value) + 1);
+});
+
+// 進捗スライダー
+const progRange = document.getElementById('progress-range');
+const progVal   = document.getElementById('progress-val');
+progRange.addEventListener('input', () => { progVal.textContent = progRange.value + '%'; });
+
+// クリア
+document.getElementById('btn-clear').addEventListener('click', () => {
+  selProject.value = '';
+  selPhase.innerHTML = '<option value="">-- 選択 --</option>';
+  selPhase.disabled = true;
+  selTask.innerHTML  = '<option value="">-- 選択 --</option>';
+  selTask.disabled  = true;
+  hoursInput.value = 1;
+  progRange.value  = 0;
+  progVal.textContent = '0%';
+  document.getElementById('form-msg').textContent = '';
+});
+
+// 保存
+document.getElementById('btn-save').addEventListener('click', async () => {
+  const taskId = selTask.value;
+  const memberId = document.getElementById('member-select').value;
+  const date = document.getElementById('date-picker').value;
+  const hours = parseInt(hoursInput.value);
+  const progress = parseInt(progRange.value);
+  const msg = document.getElementById('form-msg');
+
+  if (!taskId) { msg.innerHTML = '<span class="text-danger">タスクを選択してください</span>'; return; }
+
+  const fd = new FormData();
+  fd.append('task_id', taskId);
+  fd.append('member_id', memberId);
+  fd.append('date', date);
+  fd.append('hours', hours);
+  fd.append('progress', progress);
+  fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+  const res = await fetch('/actual/save/', { method: 'POST', body: fd });
+  if (!res.ok) { msg.innerHTML = '<span class="text-danger">保存に失敗しました</span>'; return; }
+  const data = await res.json();
+
+  msg.innerHTML = '<span class="text-success">登録しました</span>';
+  registeredTaskIds.add(parseInt(taskId));
+
+  // エントリを追加/更新
+  const task = TASKS.find(t => t.id === parseInt(taskId));
+  addOrUpdateEntry(data.pk, parseInt(taskId), task, hours, progress);
+  updateStats();
+});
+
+// 実績エントリを追加/更新
+function addOrUpdateEntry(pk, taskId, task, hours, progress) {
+  const list = document.getElementById('actual-list');
+  let row = list.querySelector(`[data-pk="${pk}"]`);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'entry-row';
+    row.dataset.pk = pk;
+    row.dataset.taskId = taskId;
+    list.appendChild(row);
+    // 既存行を task-id で探して置き換え
+    const existing = list.querySelector(`[data-task-id="${taskId}"]:not([data-pk="${pk}"])`);
+    if (existing) existing.remove();
+  }
+  row.innerHTML = `
+    <div class="d-flex align-items-start gap-2">
+      <div class="flex-grow-1">
+        <div class="entry-task">${task.name}</div>
+        <div class="entry-proj">${task.project_name}</div>
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <div class="prog-bar-bg"><div class="prog-bar-fill" style="width:${progress}%"></div></div>
+          <span class="prog-pct">${progress}%</span>
+        </div>
+      </div>
+      <div class="d-flex flex-column align-items-end gap-1">
+        <span class="entry-hours">${hours}h</span>
+        <button class="btn btn-sm btn-link text-danger p-0 delete-btn" data-pk="${pk}">
+          <i class="bi bi-x-circle"></i>
+        </button>
+      </div>
+    </div>`;
+  bindDeleteBtn(row.querySelector('.delete-btn'));
+}
+
+// 削除ボタン
+function bindDeleteBtn(btn) {
+  btn.addEventListener('click', async () => {
+    const pk = btn.dataset.pk;
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    const res = await fetch(`/actual/${pk}/delete/`, { method: 'POST', body: fd });
+    if (!res.ok) return;
+    const row = document.querySelector(`.entry-row[data-pk="${pk}"]`);
+    if (row) {
+      registeredTaskIds.delete(parseInt(row.dataset.taskId));
+      row.remove();
+    }
+    updateStats();
+  });
+}
+document.querySelectorAll('.delete-btn').forEach(bindDeleteBtn);
+
+// 統計更新
+function updateStats() {
+  const rows = document.querySelectorAll('#actual-list .entry-row');
+  let totalH = 0, totalP = 0;
+  rows.forEach(r => {
+    const h = parseFloat(r.querySelector('.entry-hours')?.textContent) || 0;
+    const p = parseFloat(r.querySelector('.prog-pct')?.textContent) || 0;
+    totalH += h; totalP += p;
+  });
+  const count = rows.length;
+  const avg = count ? Math.round(totalP / count) : 0;
+  document.getElementById('stat-hours').textContent = totalH + 'h';
+  document.getElementById('stat-count').textContent = count;
+  document.getElementById('stat-prog').textContent = avg + '%';
+  document.getElementById('stat-prog-bar').style.width = avg + '%';
+  document.getElementById('right-total').textContent = totalH + 'h';
+}
+
+// フォームにタスク情報を入力する共通関数
+function fillForm(taskId, hours, progress) {
+  const task = TASKS.find(t => t.id === taskId);
+  if (!task) return;
+
+  // プロジェクト選択
+  selProject.value = task.project_id;
+  selProject.dispatchEvent(new Event('change'));
+
+  // フェーズ選択（次のtick でoption が生成された後）
+  requestAnimationFrame(() => {
+    selPhase.value = task.phase;
+    selPhase.dispatchEvent(new Event('change'));
+
+    // タスク選択
+    requestAnimationFrame(() => {
+      selTask.value = taskId;
+      hoursInput.value = hours;
+      progRange.value = progress;
+      progVal.textContent = progress + '%';
+      document.getElementById('form-msg').textContent = '';
+
+      // ハイライト
+      document.querySelectorAll('.entry-row.is-editing').forEach(r => r.classList.remove('is-editing'));
+      const activeRow = document.querySelector(
+        `.entry-row[data-task-id="${taskId}"], .entry-row[data-sched-task-id="${taskId}"]`
+      );
+      if (activeRow) activeRow.classList.add('is-editing');
+
+      // フォームへスクロール
+      document.querySelector('.panel-header').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+}
+
+// 実績行クリック → フォームに反映
+document.querySelectorAll('#actual-list .entry-row').forEach(row => {
+  row.addEventListener('click', e => {
+    if (e.target.closest('.delete-btn')) return;
+    const taskId = parseInt(row.dataset.taskId);
+    const hours = parseFloat(row.querySelector('.entry-hours')?.textContent) || 1;
+    const progress = parseFloat(row.querySelector('.prog-pct')?.textContent) || 0;
+    fillForm(taskId, hours, progress);
+  });
+});
+
+// 予定行クリック → フォームに反映
+document.querySelectorAll('[data-sched-task-id]').forEach(row => {
+  row.addEventListener('click', () => {
+    const taskId = parseInt(row.dataset.schedTaskId);
+    const hours = parseInt(row.dataset.schedHours) || 1;
+    const task = TASKS.find(t => t.id === taskId);
+    fillForm(taskId, hours, task ? task.progress : 0);
+  });
+});
+
+// 「別のタスクの実績を追加」→ フォームにフォーカス
+document.getElementById('add-entry-btn').addEventListener('click', () => {
+  selProject.focus();
+  selProject.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+// 予定通りに一括登録
+const bulkBtn = document.getElementById('btn-bulk-add');
+if (bulkBtn) {
+  bulkBtn.addEventListener('click', async () => {
+    const memberId = document.getElementById('member-select').value;
+    const date = document.getElementById('date-picker').value;
+    const schedRows = document.querySelectorAll('[data-sched-task-id]');
+
+    bulkBtn.disabled = true;
+    bulkBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>登録中…';
+
+    let successCount = 0;
+    for (const row of schedRows) {
+      const taskId = row.dataset.schedTaskId;
+      const hours = parseInt(row.dataset.schedHours);
+      const task = TASKS.find(t => t.id === parseInt(taskId));
+      const progress = task ? task.progress : 0;
+
+      const fd = new FormData();
+      fd.append('task_id', taskId);
+      fd.append('member_id', memberId);
+      fd.append('date', date);
+      fd.append('hours', hours);
+      fd.append('progress', progress);
+      fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+      const res = await fetch('/actual/save/', { method: 'POST', body: fd });
+      if (res.ok) {
+        const data = await res.json();
+        if (task) addOrUpdateEntry(data.pk, parseInt(taskId), task, hours, progress);
+        registeredTaskIds.add(parseInt(taskId));
+        successCount++;
+      }
+    }
+
+    bulkBtn.disabled = false;
+    bulkBtn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>予定通りに一括登録';
+    if (successCount > 0) {
+      updateStats();
+    }
+  });
+}
+</script>
+{% endblock %}

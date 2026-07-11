@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}CSVインポート{% endblock %}
+{% block nav_importer %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-upload me-2 text-primary"></i>CSVインポート</h4>
+  <a href="{% url 'importer:template' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-download me-1"></i>テンプレートDL
+  </a>
+</div>
+
+<div class="row g-4">
+  <!-- アップロードフォーム -->
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header fw-semibold">ファイルをアップロード</div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label">CSVファイルを選択</label>
+            <input type="file" name="csv_file" accept=".csv" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-upload me-1"></i>インポート実行
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- フォーマット説明 -->
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header fw-semibold">CSVフォーマット</div>
+      <div class="card-body">
+        <p class="small text-secondary mb-2">
+          1ファイルにプロジェクト・タスク・スケジュールをまとめて記載します。<br>
+          <code>type</code> 列で行の種別を区別します。文字コードは UTF-8（BOM付き推奨）。
+        </p>
+
+        <h6 class="mt-3 mb-2">列一覧</h6>
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm small mb-3">
+            <thead class="table-light">
+              <tr>
+                <th>列名</th>
+                <th>project行</th>
+                <th>task行</th>
+                <th>schedule行</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><code>type</code></td><td class="text-success">project</td><td class="text-primary">task</td><td class="text-warning">schedule</td></tr>
+              <tr><td><code>ref</code></td><td>任意の識別子</td><td>任意の識別子</td><td>—</td></tr>
+              <tr><td><code>project_ref</code></td><td>—</td><td>プロジェクトのref</td><td>—</td></tr>
+              <tr><td><code>task_ref</code></td><td>—</td><td>—</td><td>タスクのref</td></tr>
+              <tr><td><code>name</code></td><td>プロジェクト名 ✱</td><td>作業名 ✱</td><td>—</td></tr>
+              <tr><td><code>phase</code></td><td>—</td><td>design / develop / review / test / other</td><td>—</td></tr>
+              <tr><td><code>planned_hours</code></td><td>—</td><td>予定工数（時間）</td><td>—</td></tr>
+              <tr><td><code>delivery_date</code></td><td>納品日 YYYY-MM-DD</td><td>—</td><td>—</td></tr>
+              <tr><td><code>amount</code></td><td>金額（円）</td><td>—</td><td>—</td></tr>
+              <tr><td><code>member</code></td><td>—</td><td>—</td><td>メンバー名 ✱</td></tr>
+              <tr><td><code>date</code></td><td>—</td><td>—</td><td>日付 YYYY-MM-DD ✱</td></tr>
+              <tr><td><code>hours</code></td><td>—</td><td>—</td><td>工数（時間） ✱</td></tr>
+              <tr><td><code>start_slot</code></td><td>—</td><td>—</td><td>開始コマ目 0〜7（省略=0）</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small text-secondary mb-2">✱ は必須項目。</p>
+
+        <h6 class="mt-3 mb-1">処理の流れ</h6>
+        <ol class="small mb-2">
+          <li>すべての <code>project</code> 行を処理し、DBに新規登録</li>
+          <li>すべての <code>task</code> 行を処理（<code>project_ref</code> で紐付け）</li>
+          <li>すべての <code>schedule</code> 行を処理（<code>task_ref</code> とメンバー名で紐付け）</li>
+        </ol>
+        <p class="small text-secondary mb-2">
+          ※ 新規作成のみ。更新には使用できません。<br>
+          ※ メンバーは事前にアプリ上で登録しておく必要があります。
+        </p>
+
+        <h6 class="mt-3 mb-1">サンプル</h6>
+        <pre class="bg-body-secondary rounded p-2 small mb-0" style="overflow-x:auto">type,ref,project_ref,task_ref,name,phase,planned_hours,delivery_date,amount,member,date,hours,start_slot
+project,p1,,,ウェブリニューアル,,,2026-12-31,3000000,,,,
+task,t1,p1,,要件定義,design,16,,,,,,
+task,t2,p1,,API実装,develop,24,,,,,,
+schedule,,,t1,,,,,,山田,2026-07-07,4,0
+schedule,,,t2,,,,,,鈴木,2026-07-08,8,</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}削除確認{% endblock %}
+{% block nav_master %}active{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card border-danger">
+      <div class="card-header fw-semibold text-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>削除確認
+      </div>
+      <div class="card-body">
+        <p class="mb-4">
+          <strong>「{{ object }}」</strong> を削除してもよいですか？<br>
+          <span class="text-secondary small">この操作は取り消せません。</span>
+        </p>
+        <form method="post">
+          {% csrf_token %}
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-danger">削除する</button>
+            <a href="{% url 'master:index' %}" class="btn btn-outline-secondary">キャンセル</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

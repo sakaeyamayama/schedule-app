@@ -1,0 +1,804 @@
+{% extends 'base.html' %}
+{% load schedule_tags %}
+{% block title %}スケジュール{% endblock %}
+{% block nav_schedule %}active{% endblock %}
+
+{% block extra_head %}
+<style>
+  :root { --slot-px: {{ slot_px }}px; }
+
+  .schedule-grid-wrap { overflow-x: auto; }
+
+  /* ── ヘッダー ── */
+  .sch-th-member {
+    width: 110px;
+    min-width: 110px;
+    position: sticky; left: 0; z-index: 3;
+    background: var(--bs-body-bg) !important;
+  }
+  .sch-th-day {
+    width: calc(var(--slot-px) * 8);
+    min-width: calc(var(--slot-px) * 8);
+    text-align: center;
+    white-space: nowrap;
+    padding: 4px 0;
+    vertical-align: middle;
+  }
+  .sch-th-day.is-today { background: rgba(var(--bs-primary-rgb), 0.08); }
+
+  /* ── メンバー列 ── */
+  .sch-td-member {
+    width: 110px;
+    min-width: 110px;
+    position: sticky; left: 0; z-index: 2;
+    background: var(--bs-body-bg) !important;
+    font-weight: 600;
+    vertical-align: top;
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  /* ── 日付セル ──
+     Bootstrap の .table が適用する水平 padding（0.5rem=8px）を
+     CSS 変数で打ち消し、グリッド線とブロック左端を揃える */
+  .sch-td-day {
+    width: calc(var(--slot-px) * 8);
+    min-width: calc(var(--slot-px) * 8);
+    padding: 3px 0 !important;  /* Bootstrap .table の padding:.5rem を打ち消す */
+    vertical-align: top;
+    position: relative;
+    z-index: 0;  /* sticky メンバー列（z-index:2）より後ろに置く */
+    overflow: hidden;
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent calc(var(--slot-px) - 1px),
+      var(--bs-border-color) calc(var(--slot-px) - 1px),
+      var(--bs-border-color) var(--slot-px)
+    );
+    background-size: var(--slot-px) 100%;
+    background-position: 1px 0;  /* 右端に余分な線が出ないよう1pxずらす */
+  }
+  .sch-td-day.is-today  { background-color: rgba(var(--bs-primary-rgb), 0.06); }
+  .sch-td-day.over-cap  { background-color: rgba(var(--bs-warning-rgb), 0.06); }
+  /* 1コマ幅ドロップ予告スロット */
+  .slot-preview {
+    display: none;
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    width: var(--slot-px);
+    background: rgba(var(--bs-success-rgb), 0.28);
+    border: 2px dashed rgba(var(--bs-success-rgb), 0.75);
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 10;
+    box-sizing: border-box;
+  }
+  .slot-preview.active { display: block; }
+
+  /* ── タスク行（実績用: flex） ── */
+  .task-row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0 2px;
+  }
+
+  /* ── タスク行（スロット配置用: absolute） ── */
+  .task-row-abs {
+    position: relative;
+    height: 38px;
+  }
+
+  /* ── タスクブロック ── */
+  .task-block {
+    position: absolute;
+    top: 0;
+    height: 34px;
+    border-radius: 4px;
+    border: 1px solid var(--task-color, #4a90d9);
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 15%, transparent);
+    box-sizing: border-box;
+    flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+    transition: background 0.1s, opacity 0.15s;
+  }
+  .task-block:hover {
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 28%, transparent);
+  }
+  .task-block.is-over-cap { border-style: dashed; }
+  .task-block.is-dragging { opacity: 0.35; cursor: grabbing; }
+
+  /* ── 実績ブロック（過去日） ── */
+  .actual-block {
+    position: relative;
+    height: 34px;
+    border-radius: 4px;
+    border: 1px solid var(--task-color, #4a90d9);
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 45%, transparent);
+    box-sizing: border-box;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .actual-block:hover {
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 60%, transparent);
+  }
+
+  /* タスク内コンテンツ（ポインターイベント無効→ドラッグ領域を確保） */
+  .task-inner {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 14px;  /* リサイズハンドル幅分オフセット */
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .task-name {
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .task-phase-icon {
+    font-size: 0.72rem;
+    color: var(--task-color, #4a90d9);
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  /* 編集ボタン（ホバーで表示） */
+  .task-edit-btn {
+    position: absolute;
+    top: 2px; right: 14px;
+    z-index: 6;
+    opacity: 0;
+    font-size: 0.6rem;
+    color: var(--task-color, #4a90d9);
+    line-height: 1;
+    padding: 2px 3px;
+    border-radius: 2px;
+    transition: opacity 0.15s;
+    text-decoration: none;
+  }
+  .task-block:hover .task-edit-btn { opacity: 0.8; }
+  .task-edit-btn:hover { opacity: 1 !important; }
+
+  /* ── 凡例 ── */
+  .proj-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-top: 12px;
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color);
+  }
+  .proj-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .proj-legend-swatch {
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* ── タスク進捗パネル ── */
+  .task-progress-panel { margin-top: 20px; }
+
+  /* アコーディオン カスタムスタイル */
+  .tp-accordion-item {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 6px !important;
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+  .tp-accordion-btn {
+    padding: 7px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+  }
+  .tp-accordion-btn:not(.collapsed) {
+    background: rgba(var(--bs-primary-rgb), 0.05);
+    color: var(--bs-primary);
+    box-shadow: none;
+  }
+  .tp-accordion-btn::after { width: 14px; height: 14px; background-size: 14px; }
+  .tp-proj-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    margin-right: 7px;
+    flex-shrink: 0;
+  }
+  .tp-accordion-body {
+    padding: 10px 14px 6px;
+    background: var(--bs-body-bg);
+  }
+
+  .tp-phase-group { margin-bottom: 14px; }
+  .tp-phase-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--bs-secondary-color);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: 5px;
+  }
+  .tp-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 0;
+    overflow-x: auto;
+  }
+  /* タスクブロックと同スタイル */
+  .tp-block {
+    position: relative;
+    height: 34px;
+    border-radius: 4px;
+    border: 1px solid var(--task-color, #4a90d9);
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 15%, transparent);
+    box-sizing: border-box;
+    flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+    overflow: hidden;
+    transition: opacity 0.15s;
+  }
+  .tp-block:hover {
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 28%, transparent);
+  }
+  .tp-block.is-dragging { opacity: 0.35; cursor: grabbing; }
+  /* 割当済み部分のオーバーレイ */
+  .tp-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 45%, transparent);
+    pointer-events: none;
+  }
+  /* 未達: 破線, 完了: 実線 */
+  .tp-block { border-style: dashed; }
+  .tp-block.is-complete { border-style: solid; }
+  .tp-block .task-inner { position: relative; z-index: 1; }
+  .tp-block .task-hrs { color: var(--task-color, #4a90d9); }
+
+  /* 下部パネル: 実績モード（デフォルト）→ 完了タスクも表示 */
+  .tp-panel-wrap .tp-block.is-complete { display: flex; }
+  /* 下部パネル: 予定モード → 完了タスクを非表示 */
+  .tp-panel-wrap.mode-schedule .tp-block.is-complete { display: none; }
+
+
+  /* ── リサイズハンドル ── */
+  .rh {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 12px;
+    cursor: ew-resize;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rh::after {
+    content: '';
+    display: block;
+    width: 2px;
+    height: 12px;
+    border-radius: 1px;
+    background: rgba(var(--bs-primary-rgb), 0.35);
+    transition: background 0.1s;
+  }
+  .rh:hover::after { background: var(--bs-primary); }
+  .rh-l { left: 0; }
+  .rh-r { right: 0; }
+
+  /* ── 表示モード切り替え ── */
+  /* デフォルト（実績モード）: 過去日の予定ブロックとそのコンテナを非表示 */
+  .sch-grid-wrap .past-sched-block { display: none; }
+  .sch-grid-wrap .past-sched-row { display: none; }
+  /* スケジュールモード: 実績を非表示、過去日の予定を表示 */
+  .sch-grid-wrap.mode-schedule .actual-block { display: none; }
+  .sch-grid-wrap.mode-schedule .past-sched-row { display: block; }
+  .sch-grid-wrap.mode-schedule .past-sched-block { display: flex; }
+
+  /* 過去日の予定ブロック */
+  .past-sched-block {
+    position: absolute;
+    top: 0;
+    height: 34px;
+    border-radius: 4px;
+    border: 1px solid var(--task-color, #4a90d9);
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 15%, transparent);
+    box-sizing: border-box;
+    flex-shrink: 0;
+    overflow: hidden;
+    opacity: 0.6;
+    cursor: grab;
+    user-select: none;
+    transition: background 0.1s, opacity 0.15s;
+  }
+  .past-sched-block:hover {
+    background: color-mix(in srgb, var(--task-color, #4a90d9) 28%, transparent);
+  }
+  .past-sched-block.is-dragging { opacity: 0.35; cursor: grabbing; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="mb-0"><i class="bi bi-calendar-week me-2 text-primary"></i>スケジュール</h4>
+  <a href="{% url 'schedule:create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>予定を追加
+  </a>
+</div>
+
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <div class="btn-group btn-group-sm">
+    <a href="?mode=day&date={{ base|date:'Y-m-d' }}"   class="btn btn-outline-secondary {% if mode == 'day'   %}active{% endif %}">日</a>
+    <a href="?mode=week&date={{ base|date:'Y-m-d' }}"  class="btn btn-outline-secondary {% if mode == 'week'  %}active{% endif %}">週</a>
+    <a href="?mode=month&date={{ base|date:'Y-m-d' }}" class="btn btn-outline-secondary {% if mode == 'month' %}active{% endif %}">月</a>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <a href="?mode={{ mode }}&date={{ prev_date|date:'Y-m-d' }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+    <span class="fw-semibold">
+      {% if mode == 'day' %}{{ base|date:"Y年m月d日" }}
+      {% elif mode == 'week' %}{{ start|date:"Y年m月d日" }} 〜 {{ end|date:"m月d日" }}
+      {% else %}{{ start|date:"Y年m月" }}
+      {% endif %}
+    </span>
+    <a href="?mode={{ mode }}&date={{ next_date|date:'Y-m-d' }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+    <a href="?mode={{ mode }}&date={{ today|date:'Y-m-d' }}" class="btn btn-sm btn-outline-primary">今日</a>
+  </div>
+  <span class="text-secondary small">
+    <i class="bi bi-arrows-move me-1"></i>ドラッグで移動 &nbsp;
+    <i class="bi bi-grip-vertical me-1 ms-2"></i>端をドラッグで時間変更
+  </span>
+  <div class="btn-group btn-group-sm ms-auto" id="view-mode-toggle">
+    <button class="btn btn-outline-secondary active" data-mode="actual">
+      <i class="bi bi-check2-circle me-1"></i>実績表示
+    </button>
+    <button class="btn btn-outline-secondary" data-mode="schedule">
+      <i class="bi bi-calendar3 me-1"></i>予定表示
+    </button>
+  </div>
+</div>
+
+<div class="card" style="width: fit-content; max-width: 100%;">
+  <div class="card-body p-0">
+    <div class="schedule-grid-wrap sch-grid-wrap">
+      <table class="table table-bordered mb-0 small align-top" style="border-collapse: collapse; width: max-content;">
+        <thead class="table-light">
+          <tr>
+            <th class="sch-th-member align-middle">メンバー</th>
+            {% for day, day_total in days_with_totals %}
+            <th class="sch-th-day {% if day == today %}is-today{% endif %}">
+              <div class="fw-semibold">{{ day|date:"D" }} {{ day|date:"m/d" }}</div>
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr data-member-id="{{ row.member.pk }}">
+            <td class="sch-td-member">{{ row.member.name }}</td>
+            {% for cell in row.cells %}
+            <td class="sch-td-day {% if cell.is_today %}is-today{% endif %} {% if cell.over_capacity %}over-cap{% endif %}"
+                data-date="{{ cell.day|date:'Y-m-d' }}">
+              {% if cell.is_past %}
+              <div class="task-row">
+                {% for a in cell.actuals %}
+                <div class="actual-block"
+                     style="width: calc(var(--slot-px) * {{ a.hours }}); --task-color: {{ a.task.project.color }};"
+                     title="[実績] {{ a.task.project.name }} / {{ a.task.name }} {{ a.hours }}h">
+                  <div class="task-inner">
+                    <span class="task-name">{{ a.task.name|strip_phase }}</span>
+                    <span class="task-phase-icon">{% if a.task.phase == 'design' %}<i class="bi bi-pencil"></i>{% elif a.task.phase == 'develop' %}<i class="bi bi-hammer"></i>{% elif a.task.phase == 'review' %}<i class="bi bi-eye"></i>{% elif a.task.phase == 'test' %}<i class="bi bi-bug"></i>{% endif %}</span>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="task-row-abs past-sched-row">
+                {% for s in cell.schedules %}
+                <div class="past-sched-block"
+                     draggable="true"
+                     data-pk="{{ s.pk }}"
+                     data-hours="{{ s.hours }}"
+                     style="left: calc(var(--slot-px) * {{ s.start_slot }}); width: calc(var(--slot-px) * {{ s.hours }}); --task-color: {{ s.task.project.color }};"
+                     title="[予定] {{ s.task.project.name }} / {{ s.task.name }} {{ s.hours }}h">
+                  <div class="task-inner">
+                    <span class="task-name">{{ s.task.name|strip_phase }}</span>
+                    <span class="task-phase-icon">{% if s.task.phase == 'design' %}<i class="bi bi-pencil"></i>{% elif s.task.phase == 'develop' %}<i class="bi bi-hammer"></i>{% elif s.task.phase == 'review' %}<i class="bi bi-eye"></i>{% elif s.task.phase == 'test' %}<i class="bi bi-bug"></i>{% endif %}</span>
+                  </div>
+                  <div class="rh rh-l" data-dir="left"></div>
+                  <div class="rh rh-r" data-dir="right"></div>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="task-row-abs">
+                {% for s in cell.schedules %}
+                <div class="task-block {% if cell.over_capacity %}is-over-cap{% endif %}"
+                     draggable="true"
+                     data-pk="{{ s.pk }}"
+                     data-hours="{{ s.hours }}"
+                     style="left: calc(var(--slot-px) * {{ s.start_slot }}); width: calc(var(--slot-px) * {{ s.hours }}); --task-color: {{ s.task.project.color }};"
+                     title="{{ s.task.project.name }} / {{ s.task.name }}">
+                  <div class="task-inner">
+                    <span class="task-name">{{ s.task.name|strip_phase }}</span>
+                    <span class="task-phase-icon">{% if s.task.phase == 'design' %}<i class="bi bi-pencil"></i>{% elif s.task.phase == 'develop' %}<i class="bi bi-hammer"></i>{% elif s.task.phase == 'review' %}<i class="bi bi-eye"></i>{% elif s.task.phase == 'test' %}<i class="bi bi-bug"></i>{% endif %}</span>
+                  </div>
+                  <a href="{% url 'schedule:edit' s.pk %}" class="task-edit-btn" title="編集">
+                    <i class="bi bi-pencil-fill"></i>
+                  </a>
+                  <div class="rh rh-l" data-dir="left"></div>
+                  <div class="rh rh-r" data-dir="right"></div>
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="100" class="text-center text-secondary py-4">メンバーがいません。マスタ管理から登録してください。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% if legend_projects %}
+<div class="proj-legend">
+  <span class="text-secondary" style="font-size:0.72rem;">凡例：</span>
+  {% for p in legend_projects %}
+  <span class="proj-legend-item">
+    <span class="proj-legend-swatch" style="background:{{ p.color }};"></span>
+    {{ p.name }}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if task_progress_by_project %}
+<div class="task-progress-panel tp-panel-wrap">
+  <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
+    <div class="text-secondary small fw-semibold">
+      <i class="bi bi-bar-chart-steps me-1"></i>タスク進捗
+      <span class="text-secondary fw-normal ms-2" style="font-size:0.7rem;">ブロックをグリッドにドラッグでスケジュール追加</span>
+    </div>
+    <div class="btn-group btn-group-sm ms-auto" id="tp-view-mode-toggle">
+      <button class="btn btn-outline-secondary active" data-mode="actual">
+        <i class="bi bi-check2-circle me-1"></i>実績表示
+      </button>
+      <button class="btn btn-outline-secondary" data-mode="schedule">
+        <i class="bi bi-calendar3 me-1"></i>予定表示
+      </button>
+    </div>
+  </div>
+  <div class="accordion accordion-flush" id="tpAccordion">
+    {% for proj_group in task_progress_by_project %}
+    <div class="accordion-item tp-accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed tp-accordion-btn"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#tp-proj-{{ proj_group.project.pk }}"
+                aria-expanded="false">
+          <span class="tp-proj-swatch" style="background: {{ proj_group.project.color }};"></span>
+          {{ proj_group.project.name }}
+        </button>
+      </h2>
+      <div id="tp-proj-{{ proj_group.project.pk }}" class="accordion-collapse collapse">
+        <div class="accordion-body tp-accordion-body">
+          {% for group in proj_group.phases %}
+          <div class="tp-phase-group">
+            <div class="tp-phase-label">{{ group.label }}</div>
+            <div class="tp-row">
+              {% for tp in group.items %}
+              <div class="tp-block {% if tp.pct >= 100 %}is-complete{% endif %}"
+                   draggable="true"
+                   data-task-id="{{ tp.task.pk }}"
+                   data-sched-pct="{{ tp.pct }}"
+                   data-actual-pct="{{ tp.task.progress }}"
+                   data-sched-hrs="{{ tp.scheduled }}"
+                   data-actual-hrs="{{ tp.actual }}"
+                   data-planned-hrs="{{ tp.task.planned_hours }}"
+                   style="width: calc(var(--slot-px) * {{ tp.task.planned_hours }}); --task-color: {{ tp.task.project.color }};"
+                   title="{{ tp.task.project.name }} / {{ tp.task.name }}&#10;割当: {{ tp.scheduled }}h / 予定: {{ tp.task.planned_hours }}h">
+                <div class="tp-fill" style="width: {{ tp.pct }}%;"></div>
+                <div class="task-inner">
+                  <span class="task-name">{{ tp.task.name|strip_phase }}</span>
+                  <span class="task-hrs">{{ tp.scheduled }}h/{{ tp.task.planned_hours }}h</span>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // ── ユーティリティ ──
+  function getCookie(name) {
+    const m = document.cookie.match('(?:^|;)\\s*' + name + '=([^;]*)');
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  function postJSON(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams(body).toString(),
+    });
+  }
+  function getSlotPx() {
+    return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slot-px')) || 24;
+  }
+
+  // ── 右クリック削除 ──
+  document.querySelectorAll('.task-block, .past-sched-block').forEach(block => {
+    block.addEventListener('contextmenu', async e => {
+      e.preventDefault();
+      const res = await postJSON(`/schedule/${block.dataset.pk}/delete/`, {});
+      if (res.ok) window.location.reload();
+    });
+  });
+
+  // ── リサイズ ──
+  document.querySelectorAll('.rh').forEach(handle => {
+    handle.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();   // ← ドラッグ開始を抑止
+      e.stopPropagation();
+
+      const SLOT = getSlotPx();
+      const block = handle.closest('.task-block, .past-sched-block');
+      const isRight = handle.dataset.dir === 'right';
+      const origHours = parseInt(block.dataset.hours, 10);
+      const startX = e.clientX;
+      let cur = origHours;   // 合計時間（8h超えで複数日に分割される）
+
+      block.classList.add('is-dragging');
+      const editBtn = block.querySelector('.task-edit-btn');
+      if (editBtn) editBtn.style.pointerEvents = 'none';
+
+      function onMove(ev) {
+        const delta = ev.clientX - startX;
+        // 合計時間は1〜240h（最大30日）、右方向のみ複数日対応
+        const newH = Math.max(1, Math.min(isRight ? 240 : 8, origHours + Math.round(delta / SLOT) * (isRight ? 1 : -1)));
+        if (newH !== cur) {
+          cur = newH;
+          // ブロック表示は当日分（最大8h）に固定
+          const dispH = Math.min(cur, 8);
+          block.style.width = `calc(var(--slot-px) * ${dispH})`;
+          const hrs = block.querySelector('.task-hrs');
+          if (hrs) {
+            if (cur > 8) {
+              const extraDays = Math.ceil(cur / 8) - 1;
+              hrs.textContent = `${cur}h +${extraDays}d`;
+            } else {
+              hrs.textContent = cur >= 2 ? cur + 'h' : '';
+            }
+          }
+        }
+      }
+
+      async function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        block.classList.remove('is-dragging');
+        if (editBtn) editBtn.style.pointerEvents = '';
+
+        if (cur !== origHours) {
+          const res = await postJSON(`/schedule/${block.dataset.pk}/resize/`, { total_hours: cur });
+          if (res.ok) {
+            window.location.reload();
+          } else {
+            const dispH = Math.min(origHours, 8);
+            block.style.width = `calc(var(--slot-px) * ${dispH})`;
+            const hrs = block.querySelector('.task-hrs');
+            if (hrs) hrs.textContent = origHours >= 2 ? origHours + 'h' : '';
+          }
+        }
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // ── ドラッグ移動（グリッド内タスクブロック・過去日予定ブロック） ──
+  let dragPk = null;
+  let dragTaskId = null;  // 下部パネルからのドラッグ用
+  let dragGrabSlot = 0;   // ブロック内でつかんだスロット位置
+
+  document.querySelectorAll('.task-block, .past-sched-block').forEach(block => {
+    block.addEventListener('dragstart', e => {
+      if (e.target.classList.contains('rh')) { e.preventDefault(); return; }
+      const slotPx = getSlotPx();
+      dragGrabSlot = Math.floor(e.offsetX / slotPx);
+      e.dataTransfer.setDragImage(block, e.offsetX, e.offsetY);
+      dragPk = block.dataset.pk;
+      dragTaskId = null;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'schedule:' + dragPk);
+      requestAnimationFrame(() => block.classList.add('is-dragging'));
+    });
+    block.addEventListener('dragend', () => {
+      block.classList.remove('is-dragging');
+      dragPk = null;
+      document.querySelectorAll('.slot-preview.active').forEach(p => p.classList.remove('active'));
+    });
+  });
+
+  // ── ドラッグ新規作成（下部パネル → グリッド） ──
+  document.querySelectorAll('.tp-block').forEach(block => {
+    block.addEventListener('dragstart', e => {
+      dragGrabSlot = 0;
+      dragTaskId = block.dataset.taskId;
+      dragPk = null;
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', 'task:' + dragTaskId);
+
+      // 1コマ幅のドラッグゴーストを作成
+      const slotPx = getSlotPx();
+      const color = getComputedStyle(block).getPropertyValue('--task-color').trim() || '#4a90d9';
+      const ghost = document.createElement('div');
+      ghost.style.cssText = `position:fixed;top:-200px;left:-200px;width:${slotPx}px;height:34px;border-radius:4px;background:${color};opacity:0.85;pointer-events:none;`;
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 0, 17);
+      setTimeout(() => { if (ghost.parentNode) ghost.parentNode.removeChild(ghost); }, 0);
+
+      requestAnimationFrame(() => block.classList.add('is-dragging'));
+    });
+    block.addEventListener('dragend', () => {
+      block.classList.remove('is-dragging');
+      dragTaskId = null;
+      document.querySelectorAll('.slot-preview.active').forEach(p => p.classList.remove('active'));
+    });
+  });
+
+  // ── 上部グリッド 表示モード切り替え ──
+  const grid = document.querySelector('.sch-grid-wrap');
+  const GRID_STORAGE_KEY = 'sch_view_mode';
+  function applyGridMode(mode) {
+    grid.classList.toggle('mode-schedule', mode === 'schedule');
+    document.querySelectorAll('#view-mode-toggle button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    localStorage.setItem(GRID_STORAGE_KEY, mode);
+  }
+  applyGridMode(localStorage.getItem(GRID_STORAGE_KEY) || 'actual');
+  document.querySelectorAll('#view-mode-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => applyGridMode(btn.dataset.mode));
+  });
+
+  // ── 下部タスク進捗パネル 表示モード切り替え ──
+  const tpPanel = document.querySelector('.tp-panel-wrap');
+  const TP_STORAGE_KEY = 'sch_tp_mode';
+  function applyTpMode(mode) {
+    if (tpPanel) tpPanel.classList.toggle('mode-schedule', mode === 'schedule');
+    document.querySelectorAll('#tp-view-mode-toggle button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    document.querySelectorAll('.tp-block').forEach(block => {
+      const fill = block.querySelector('.tp-fill');
+      const hrs  = block.querySelector('.task-hrs');
+      if (mode === 'actual') {
+        if (fill) fill.style.width = block.dataset.actualPct + '%';
+        if (hrs)  hrs.textContent  = block.dataset.actualHrs + 'h/' + block.dataset.plannedHrs + 'h';
+      } else {
+        if (fill) fill.style.width = block.dataset.schedPct + '%';
+        if (hrs)  hrs.textContent  = block.dataset.schedHrs + 'h/' + block.dataset.plannedHrs + 'h';
+      }
+    });
+    localStorage.setItem(TP_STORAGE_KEY, mode);
+  }
+  applyTpMode(localStorage.getItem(TP_STORAGE_KEY) || 'actual');
+  document.querySelectorAll('#tp-view-mode-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => applyTpMode(btn.dataset.mode));
+  });
+
+  // 各セルに1コマ幅のドロップ予告スロットを生成
+  document.querySelectorAll('.sch-td-day').forEach(cell => {
+    const preview = document.createElement('div');
+    preview.className = 'slot-preview';
+    cell.appendChild(preview);
+  });
+
+  document.querySelectorAll('.sch-td-day').forEach(cell => {
+    const preview = cell.querySelector('.slot-preview');
+
+    cell.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = dragTaskId ? 'copy' : 'move';
+      const slotPx = getSlotPx();
+      const rect = cell.getBoundingClientRect();
+      const dropSlot = Math.floor((e.clientX - rect.left) / slotPx);
+      const slot = Math.max(0, Math.min(7, dropSlot - dragGrabSlot));
+      preview.style.left = `calc(var(--slot-px) * ${slot})`;
+      preview.classList.add('active');
+    });
+    cell.addEventListener('dragleave', e => {
+      if (!cell.contains(e.relatedTarget)) preview.classList.remove('active');
+    });
+    cell.addEventListener('drop', async e => {
+      e.preventDefault();
+      preview.classList.remove('active');
+
+      const raw      = e.dataTransfer.getData('text/plain');
+      const date     = cell.dataset.date;
+      const memberId = cell.closest('tr').dataset.memberId;
+
+      // ドロップ位置からstart_slotを算出（グラブオフセットを補正）
+      const slotPx = getSlotPx();
+      const rect = cell.getBoundingClientRect();
+      const dropSlot = Math.floor((e.clientX - rect.left) / slotPx);
+      const start_slot = Math.max(0, Math.min(7, dropSlot - dragGrabSlot));
+
+      if (raw.startsWith('task:')) {
+        // 下部パネルから → 新規スケジュール作成（1コマ）
+        const taskId = raw.slice(5) || dragTaskId;
+        if (!taskId) return;
+        const res = await postJSON('/schedule/quick-create/', { task_id: taskId, date, member_id: memberId, start_slot });
+        if (res.ok) window.location.reload();
+      } else {
+        // グリッド内 → 移動
+        const pk = raw.startsWith('schedule:') ? raw.slice(9) : (raw || dragPk);
+        if (!pk) return;
+        const res = await postJSON(`/schedule/${pk}/move/`, { date, member_id: memberId, start_slot });
+        if (res.ok) window.location.reload();
+      }
+    });
+  });
+
+  // ── タスク進捗アコーディオン 開閉状態を localStorage に保存・復元 ──
+  const TP_ACCORDION_KEY = 'sch_tp_accordion';
+  function loadAccordionState() {
+    try { return JSON.parse(localStorage.getItem(TP_ACCORDION_KEY)) || []; } catch { return []; }
+  }
+  function saveAccordionState(openIds) {
+    localStorage.setItem(TP_ACCORDION_KEY, JSON.stringify(openIds));
+  }
+
+  // ページ読み込み時に保存済みの開いているプロジェクトを展開
+  const openIds = loadAccordionState();
+  openIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.classList.add('show');
+      const btn = document.querySelector(`[data-bs-target="#${id}"]`);
+      if (btn) { btn.classList.remove('collapsed'); btn.setAttribute('aria-expanded', 'true'); }
+    }
+  });
+
+  // 開閉イベントを監視して状態を更新
+  document.querySelectorAll('.accordion-collapse').forEach(collapse => {
+    collapse.addEventListener('show.bs.collapse', () => {
+      const ids = loadAccordionState();
+      if (!ids.includes(collapse.id)) { ids.push(collapse.id); saveAccordionState(ids); }
+    });
+    collapse.addEventListener('hide.bs.collapse', () => {
+      saveAccordionState(loadAccordionState().filter(id => id !== collapse.id));
+    });
+  });
+})();
+</script>
+{% endblock %}

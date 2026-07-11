@@ -1,0 +1,3 @@
+django superuser
+name: admin
+pass: admintest

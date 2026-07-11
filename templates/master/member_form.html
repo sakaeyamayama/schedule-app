@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}メンバー{% if object %}編集{% else %}登録{% endif %}{% endblock %}
+{% block nav_master %}active{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-person me-2"></i>メンバー{% if object %}編集{% else %}登録{% endif %}
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label">名前</label>
+            <input type="text" name="name" value="{{ form.name.value|default:'' }}"
+                   class="form-control {% if form.name.errors %}is-invalid{% endif %}" required>
+            {% for e in form.name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-4">
+            <label class="form-label">単価（円/時）</label>
+            <input type="number" name="unit_price" value="{{ form.unit_price.value|default:0 }}"
+                   min="0" class="form-control {% if form.unit_price.errors %}is-invalid{% endif %}">
+            {% for e in form.unit_price.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">保存</button>
+            <a href="{% url 'master:index' %}" class="btn btn-outline-secondary">キャンセル</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

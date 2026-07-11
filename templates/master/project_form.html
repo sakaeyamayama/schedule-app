@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}プロジェクト{% if object %}編集{% else %}登録{% endif %}{% endblock %}
+{% block nav_master %}active{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-folder me-2"></i>プロジェクト{% if object %}編集{% else %}登録{% endif %}
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label">プロジェクト名</label>
+            <input type="text" name="name" value="{{ form.name.value|default:'' }}"
+                   class="form-control {% if form.name.errors %}is-invalid{% endif %}" required>
+            {% for e in form.name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label">表示色</label>
+            <div class="d-flex align-items-center gap-3">
+              <input type="color" name="color" value="{{ form.color.value|default:'#4a90d9' }}"
+                     class="form-control form-control-color {% if form.color.errors %}is-invalid{% endif %}"
+                     style="width: 56px; height: 38px; padding: 2px 4px; cursor: pointer;">
+              <span class="text-secondary small">スケジュール画面でのタスクブロック色に使用されます</span>
+            </div>
+            {% for e in form.color.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label">納品日</label>
+            <input type="date" name="delivery_date" value="{{ form.delivery_date.value|default:'' }}"
+                   class="form-control {% if form.delivery_date.errors %}is-invalid{% endif %}">
+            {% for e in form.delivery_date.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-4">
+            <label class="form-label">金額（円）</label>
+            <input type="number" name="amount" value="{{ form.amount.value|default:0 }}"
+                   min="0" class="form-control {% if form.amount.errors %}is-invalid{% endif %}">
+            {% for e in form.amount.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">保存</button>
+            <a href="{% url 'master:index' %}" class="btn btn-outline-secondary">キャンセル</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+[Unit]
+Description=Schedule App (Gunicorn)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/schedule-app
+EnvironmentFile=/opt/schedule-app/.env
+ExecStart=/opt/schedule-app/.venv/bin/gunicorn \
+    --workers 2 \
+    --bind 0.0.0.0:8000 \
+    --access-logfile /var/log/schedule-app/access.log \
+    --error-logfile /var/log/schedule-app/error.log \
+    config.wsgi:application
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

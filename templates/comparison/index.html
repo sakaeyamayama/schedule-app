@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}予実比較{% endblock %}
+{% block nav_comparison %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="mb-0"><i class="bi bi-graph-up me-2 text-primary"></i>予実比較</h4>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- 集計テーブル -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header fw-semibold">プロジェクト別集計</div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>プロジェクト</th>
+              <th class="text-end">納品日</th>
+              <th class="text-end">予定</th>
+              <th class="text-end">実績</th>
+              <th class="text-end">割合</th>
+              <th class="text-end">契約金額</th>
+              <th class="text-end">実績原価</th>
+              <th class="text-end">粗利</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td>{{ row.project.name }}</td>
+              <td class="text-end text-secondary">{{ row.project.delivery_date|date:"Y/m/d"|default:"—" }}</td>
+              <td class="text-end">{{ row.scheduled }}h</td>
+              <td class="text-end">{{ row.actual }}h</td>
+              <td class="text-end">
+                {% if row.ratio is not None %}
+                  <span class="{% if row.ratio > 100 %}text-danger{% elif row.ratio >= 80 %}text-warning{% else %}text-success{% endif %}">
+                    {{ row.ratio }}%
+                  </span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-end">{% if row.amount %}¥{{ row.amount|intcomma }}{% else %}—{% endif %}</td>
+              <td class="text-end">¥{{ row.actual_cost|intcomma }}</td>
+              <td class="text-end">
+                {% if row.gross is not None %}
+                  <span class="{% if row.gross < 0 %}text-danger{% else %}text-success{% endif %}">
+                    ¥{{ row.gross|intcomma }}
+                  </span>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="text-center text-secondary py-3">データがありません</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 契約充足度タイムライン -->
+<div class="card mt-2">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-calendar-range me-2 text-primary"></i>契約充足度
+    <span class="text-secondary fw-normal ms-2 small">160万円/月 ・ 起算日 {{ base_date|date:"Y/m/d" }}</span>
+  </div>
+  <div class="card-body">
+    <div class="mb-3 small">
+      契約金額合計 <strong>¥{{ total_amount|intcomma }}</strong>　→
+      <strong>{{ months_covered }}か月分</strong>
+      （{{ base_date|date:"Y/m/d" }} 〜 <span class="text-primary fw-semibold">{{ contract_end|date:"Y/m/d" }}</span> まで）
+    </div>
+
+    <!-- 月セル -->
+    <div class="d-flex border rounded overflow-hidden" style="height:44px;">
+      {% for m in timeline_months %}
+      <div class="position-relative flex-fill"
+           style="min-width:0; {% if not forloop.last %}border-right:1px solid var(--bs-border-color);{% endif %}"
+           title="{{ m.label }}: {{ m.fill_pct }}%">
+        <div class="position-absolute top-0 start-0 h-100"
+             style="width:{{ m.fill_pct }}%; background:rgba(var(--bs-primary-rgb),0.35);"></div>
+        <div class="position-relative d-flex align-items-center justify-content-center h-100"
+             style="font-size:0.72rem; z-index:1; pointer-events:none;">{{ m.label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="mt-2 d-flex gap-3 small text-secondary">
+      <span>
+        <span style="display:inline-block;width:12px;height:12px;background:rgba(var(--bs-primary-rgb),0.35);border-radius:2px;vertical-align:middle;" class="me-1"></span>契約カバー済み
+      </span>
+      <span>
+        <span style="display:inline-block;width:12px;height:12px;border:1px solid var(--bs-border-color);border-radius:2px;vertical-align:middle;" class="me-1"></span>未カバー
+      </span>
+    </div>
+  </div>
+</div>
+{% endblock %}
