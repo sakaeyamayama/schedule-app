@@ -6,9 +6,9 @@ After=network.target postgresql.service
 Type=simple
 User=ec2-user
 Group=ec2-user
-WorkingDirectory=/opt/schedule-app
-EnvironmentFile=/opt/schedule-app/.env
-ExecStart=/opt/schedule-app/.venv/bin/gunicorn \
+WorkingDirectory=/opt/app/schedule-app
+EnvironmentFile=/opt/app/schedule-app/.env
+ExecStart=/opt/app/schedule-app/.venv/bin/gunicorn \
     --workers 2 \
     --bind 0.0.0.0:8000 \
     --access-logfile /var/log/schedule-app/access.log \

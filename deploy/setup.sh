@@ -33,10 +33,10 @@
 #     \q
 #
 #   # リポジトリクローン
-#   sudo mkdir -p /opt/schedule-app
-#   sudo chown ec2-user:ec2-user /opt/schedule-app
-#   git clone <REPO_URL> /opt/schedule-app
-#   cd /opt/schedule-app
+#   sudo mkdir -p /opt/app/schedule-app
+#   sudo chown ec2-user:ec2-user /opt/app/schedule-app
+#   git clone <REPO_URL> /opt/app/schedule-app
+#   cd /opt/app/schedule-app
 #
 #   # .env 作成
 #   cp .env.example .env
@@ -72,7 +72,7 @@ if [ "$db_ready" != "yes" ]; then
     exit 1
 fi
 
-read -p "/opt/schedule-app のクローンと .env の作成が完了していますか？ (yes/no): " env_ready
+read -p "/opt/app/schedule-app のクローンと .env の作成が完了していますか？ (yes/no): " env_ready
 if [ "$env_ready" != "yes" ]; then
     echo "先頭のコメントを参照して手順 3 を実施してください。"
     exit 1
