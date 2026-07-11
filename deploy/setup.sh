@@ -3,10 +3,22 @@
 #
 # 【事前に手動で実施してください】
 #
-# 1. Python 3.11 インストール
-#   （Amazon Linux 2023 のデフォルト python3 は 3.9 のため、3.10+ が必要）
-#   sudo dnf install -y python3.11
-#   python3.11 --version  # Python 3.11.x と表示されることを確認
+# 1. Python 3.12 インストール
+#   （Django 6.x は Python 3.12+ が必須。まず dnf で試し、なければソースビルド）
+#
+#   # まず dnf で試す
+#   sudo dnf install -y python3.12
+#
+#   # dnf で入らない場合はソースビルド
+#   sudo dnf install -y gcc openssl-devel bzip2-devel libffi-devel zlib-devel
+#   cd /tmp
+#   curl -O https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tgz
+#   tar xzf Python-3.12.10.tgz && cd Python-3.12.10
+#   ./configure --enable-optimizations
+#   make -j$(nproc)
+#   sudo make altinstall   # altinstall で既存 python3 を上書きしない
+#
+#   python3.12 --version  # Python 3.12.x と表示されることを確認
 #
 # 2. PostgreSQL インストール & 起動
 #   sudo dnf install -y postgresql15 postgresql15-server
@@ -29,7 +41,7 @@
 #   # .env 作成
 #   cp .env.example .env
 #   vi .env  # 以下を設定:
-#     SECRET_KEY=<python3.11 -c "import secrets; print(secrets.token_urlsafe(50))"> の出力値
+#     SECRET_KEY=<python3.12 -c "import secrets; print(secrets.token_urlsafe(50))"> の出力値
 #     DEBUG=False
 #     DATABASE_URL=postgres://scheduleapp:yourpassword@localhost:5432/schedule_app
 #     ALLOWED_HOSTS=<サーバーのIPアドレスまたはドメイン>
@@ -73,7 +85,7 @@ echo ""
 cd "$APP_DIR"
 
 echo "=== 4. 仮想環境作成 & パッケージインストール ==="
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
