@@ -3,25 +3,33 @@
 #
 # 【事前に手動で実施してください】
 #
-# 1. PostgreSQL インストール & 起動
-#   sudo dnf install -y postgresql15 postgresql15-server python3
+# 1. Python 3.11 インストール
+#   （Amazon Linux 2023 のデフォルト python3 は 3.9 のため、3.10+ が必要）
+#   sudo dnf install -y python3.11
+#   python3.11 --version  # Python 3.11.x と表示されることを確認
+#
+# 2. PostgreSQL インストール & 起動
+#   sudo dnf install -y postgresql15 postgresql15-server
 #   sudo postgresql-setup --initdb
 #   sudo systemctl enable --now postgresql
 #
-# 2. DB・ユーザー作成
+# 3. DB・ユーザー作成 & リポジトリクローン & .env 作成
+#   # DB作成
 #   sudo -u postgres psql
 #     CREATE USER scheduleapp WITH PASSWORD 'yourpassword';
 #     CREATE DATABASE schedule_app OWNER scheduleapp;
 #     \q
 #
-# 3. リポジトリクローン & .env 作成
+#   # リポジトリクローン
 #   sudo mkdir -p /opt/schedule-app
 #   sudo chown ec2-user:ec2-user /opt/schedule-app
 #   git clone <REPO_URL> /opt/schedule-app
 #   cd /opt/schedule-app
+#
+#   # .env 作成
 #   cp .env.example .env
 #   vi .env  # 以下を設定:
-#     SECRET_KEY=<python3 -c "import secrets; print(secrets.token_urlsafe(50))"> の出力値
+#     SECRET_KEY=<python3.11 -c "import secrets; print(secrets.token_urlsafe(50))"> の出力値
 #     DEBUG=False
 #     DATABASE_URL=postgres://scheduleapp:yourpassword@localhost:5432/schedule_app
 #     ALLOWED_HOSTS=<サーバーのIPアドレスまたはドメイン>
@@ -40,9 +48,15 @@ echo ""
 echo "事前準備が完了しているか確認します。"
 echo ""
 
+read -p "Python 3.11 のインストールが完了していますか？ (yes/no): " py_ready
+if [ "$py_ready" != "yes" ]; then
+    echo "先頭のコメントを参照して手順 1 を実施してください。"
+    exit 1
+fi
+
 read -p "PostgreSQL が起動し、DB・ユーザーの作成が完了していますか？ (yes/no): " db_ready
 if [ "$db_ready" != "yes" ]; then
-    echo "先頭のコメントを参照して手順 1〜2 を実施してください。"
+    echo "先頭のコメントを参照して手順 2〜3 を実施してください。"
     exit 1
 fi
 
@@ -59,7 +73,7 @@ echo ""
 cd "$APP_DIR"
 
 echo "=== 4. 仮想環境作成 & パッケージインストール ==="
-python3 -m venv .venv
+python3.11 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 

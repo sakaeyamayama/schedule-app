@@ -1,3 +1,7 @@
 django superuser
 name: admin
 pass: admintest
+
+postgres 
+user: scheduleapp
+pass: schedule001
