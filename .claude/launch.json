@@ -4,7 +4,7 @@
     {
       "name": "schedule-app",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "C:\\work\\schedule-app\\.venv\\Scripts\\python.exe manage.py runserver 8000"],
+      "runtimeArgs": ["/c", "C:\\work\\schedule-app\\schedule-app\\.venv\\Scripts\\python.exe manage.py runserver 8000"],
       "port": 8000
     }
   ]
