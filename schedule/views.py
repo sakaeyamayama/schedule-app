@@ -232,8 +232,10 @@ class HoursUpdateView(View):
 
 class ScheduleResizeView(View):
     """
-    合計工数を受け取り、同メンバー・同タスクの開始日以降に8h/日で自動分割する。
-    開始日以降の既存エントリは一旦削除してから再生成。
+    リサイズは当日内（8コマ目まで）に限定する。翌日への分割・合体は行わない。
+
+    start_slot が指定された場合（左端ドラッグ）は、右端（終了位置）を固定したまま
+    同日内で開始位置と時間のみを変更する。
     """
     def post(self, request, pk):
         schedule = get_object_or_404(Schedule, pk=pk)
@@ -241,35 +243,26 @@ class ScheduleResizeView(View):
             total_hours = int(request.POST.get('total_hours'))
         except (ValueError, TypeError):
             return JsonResponse({'error': 'invalid'}, status=400)
-        total_hours = max(1, min(total_hours, 8 * 30))
 
-        member_id = schedule.member_id
-        task_id   = schedule.task_id
-        start_date = schedule.date
+        start_slot_raw = request.POST.get('start_slot')
+        if start_slot_raw is not None:
+            try:
+                start_slot = int(start_slot_raw)
+            except (ValueError, TypeError):
+                return JsonResponse({'error': 'invalid'}, status=400)
+            start_slot = max(0, min(7, start_slot))
+            total_hours = max(1, min(total_hours, 8 - start_slot))
+            schedule.hours = total_hours
+            schedule.start_slot = start_slot
+            schedule.save()
+            return JsonResponse({'pk': pk, 'total_hours': total_hours, 'start_slot': start_slot})
 
-        # 開始日より後の同タスク・同メンバーエントリを削除
-        Schedule.objects.filter(
-            member_id=member_id, task_id=task_id, date__gt=start_date
-        ).delete()
-
-        remaining = total_hours
-        current   = start_date
-        first     = True
-        while remaining > 0:
-            day_hours = min(remaining, 8)
-            if first:
-                schedule.hours = day_hours
-                schedule.save()
-                first = False
-            else:
-                Schedule.objects.update_or_create(
-                    member_id=member_id, task_id=task_id, date=current,
-                    defaults={'hours': day_hours},
-                )
-            remaining -= day_hours
-            current   += datetime.timedelta(days=1)
-
-        return JsonResponse({'pk': pk, 'total_hours': total_hours})
+        # 右端ドラッグ: 当日内（8コマ目まで）に制限。翌日への分割・合体は行わない。
+        max_hours = 8 - schedule.start_slot
+        hours = max(1, min(total_hours, max_hours))
+        schedule.hours = hours
+        schedule.save()
+        return JsonResponse({'pk': pk, 'total_hours': hours})
 
 
 class ScheduleQuickCreateView(View):

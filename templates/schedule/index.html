@@ -130,7 +130,7 @@
     display: flex;
     align-items: center;
     gap: 3px;
-    padding: 0 14px;  /* リサイズハンドル幅分オフセット */
+    padding: 0 2px;
     height: 100%;
     overflow: hidden;
     pointer-events: none;
@@ -143,13 +143,33 @@
     flex: 1;
     min-width: 0;
   }
-  .task-phase-icon {
-    font-size: 0.72rem;
-    color: var(--task-color, #4a90d9);
-    flex-shrink: 0;
-    opacity: 0.8;
+  /* ── タスクブロック・過去日予定・実績ブロック: フェーズ / タスク名の2行表示 ── */
+  .task-block .task-inner,
+  .past-sched-block .task-inner,
+  .actual-block .task-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
   }
-
+  .task-block .task-name,
+  .past-sched-block .task-name,
+  .actual-block .task-name {
+    flex: none;
+    width: 100%;
+    font-size: 0.62rem;
+    line-height: 1.2;
+  }
+  .task-phase {
+    width: 100%;
+    font-size: 0.58rem;
+    line-height: 1.2;
+    color: var(--task-color, #4a90d9);
+    opacity: 0.85;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   /* 編集ボタン（ホバーで表示） */
   .task-edit-btn {
     position: absolute;
@@ -285,16 +305,8 @@
     align-items: center;
     justify-content: center;
   }
-  .rh::after {
-    content: '';
-    display: block;
-    width: 2px;
-    height: 12px;
-    border-radius: 1px;
-    background: rgba(var(--bs-primary-rgb), 0.35);
-    transition: background 0.1s;
-  }
-  .rh:hover::after { background: var(--bs-primary); }
+  /* ドラッグバー本体は非表示（当たり判定は .rh に残し、リサイズ機能はそのまま維持） */
+  .rh::after { content: none; }
   .rh-l { left: 0; }
   .rh-r { right: 0; }
 
@@ -397,8 +409,8 @@
                      style="width: calc(var(--slot-px) * {{ a.hours }}); --task-color: {{ a.task.project.color }};"
                      title="[実績] {{ a.task.project.name }} / {{ a.task.name }} {{ a.hours }}h">
                   <div class="task-inner">
+                    <span class="task-phase">{{ a.task.get_phase_display }}</span>
                     <span class="task-name">{{ a.task.name|strip_phase }}</span>
-                    <span class="task-phase-icon">{% if a.task.phase == 'design' %}<i class="bi bi-pencil"></i>{% elif a.task.phase == 'develop' %}<i class="bi bi-hammer"></i>{% elif a.task.phase == 'review' %}<i class="bi bi-eye"></i>{% elif a.task.phase == 'test' %}<i class="bi bi-bug"></i>{% endif %}</span>
                   </div>
                 </div>
                 {% endfor %}
@@ -409,11 +421,12 @@
                      draggable="true"
                      data-pk="{{ s.pk }}"
                      data-hours="{{ s.hours }}"
+                     data-start-slot="{{ s.start_slot }}"
                      style="left: calc(var(--slot-px) * {{ s.start_slot }}); width: calc(var(--slot-px) * {{ s.hours }}); --task-color: {{ s.task.project.color }};"
                      title="[予定] {{ s.task.project.name }} / {{ s.task.name }} {{ s.hours }}h">
                   <div class="task-inner">
+                    <span class="task-phase">{{ s.task.get_phase_display }}</span>
                     <span class="task-name">{{ s.task.name|strip_phase }}</span>
-                    <span class="task-phase-icon">{% if s.task.phase == 'design' %}<i class="bi bi-pencil"></i>{% elif s.task.phase == 'develop' %}<i class="bi bi-hammer"></i>{% elif s.task.phase == 'review' %}<i class="bi bi-eye"></i>{% elif s.task.phase == 'test' %}<i class="bi bi-bug"></i>{% endif %}</span>
                   </div>
                   <div class="rh rh-l" data-dir="left"></div>
                   <div class="rh rh-r" data-dir="right"></div>
@@ -427,11 +440,12 @@
                      draggable="true"
                      data-pk="{{ s.pk }}"
                      data-hours="{{ s.hours }}"
+                     data-start-slot="{{ s.start_slot }}"
                      style="left: calc(var(--slot-px) * {{ s.start_slot }}); width: calc(var(--slot-px) * {{ s.hours }}); --task-color: {{ s.task.project.color }};"
                      title="{{ s.task.project.name }} / {{ s.task.name }}">
                   <div class="task-inner">
+                    <span class="task-phase">{{ s.task.get_phase_display }}</span>
                     <span class="task-name">{{ s.task.name|strip_phase }}</span>
-                    <span class="task-phase-icon">{% if s.task.phase == 'design' %}<i class="bi bi-pencil"></i>{% elif s.task.phase == 'develop' %}<i class="bi bi-hammer"></i>{% elif s.task.phase == 'review' %}<i class="bi bi-eye"></i>{% elif s.task.phase == 'test' %}<i class="bi bi-bug"></i>{% endif %}</span>
                   </div>
                   <a href="{% url 'schedule:edit' s.pk %}" class="task-edit-btn" title="編集">
                     <i class="bi bi-pencil-fill"></i>
@@ -572,8 +586,11 @@
       const block = handle.closest('.task-block, .past-sched-block');
       const isRight = handle.dataset.dir === 'right';
       const origHours = parseInt(block.dataset.hours, 10);
+      const origStartSlot = parseInt(block.dataset.startSlot, 10) || 0;
+      const endSlot = origStartSlot + origHours;   // 左端ドラッグ時に固定する右端位置
       const startX = e.clientX;
-      let cur = origHours;   // 合計時間（8h超えで複数日に分割される）
+      let cur = origHours;         // 当日内の時間（1〜8h、日境界を越えない）
+      let curStartSlot = origStartSlot;
 
       block.classList.add('is-dragging');
       const editBtn = block.querySelector('.task-edit-btn');
@@ -581,22 +598,20 @@
 
       function onMove(ev) {
         const delta = ev.clientX - startX;
-        // 合計時間は1〜240h（最大30日）、右方向のみ複数日対応
-        const newH = Math.max(1, Math.min(isRight ? 240 : 8, origHours + Math.round(delta / SLOT) * (isRight ? 1 : -1)));
+        // 右端ドラッグ: 当日内（開始コマ〜8コマ目、最大 8 - origStartSlot）で右方向へ伸縮
+        // 左端ドラッグ: 右端（終了位置）を固定し、同日内（1〜8h）で左方向へ伸縮
+        const newH = isRight
+          ? Math.max(1, Math.min(8 - origStartSlot, origHours + Math.round(delta / SLOT)))
+          : Math.max(1, Math.min(Math.min(8, endSlot), origHours - Math.round(delta / SLOT)));
         if (newH !== cur) {
           cur = newH;
-          // ブロック表示は当日分（最大8h）に固定
-          const dispH = Math.min(cur, 8);
-          block.style.width = `calc(var(--slot-px) * ${dispH})`;
-          const hrs = block.querySelector('.task-hrs');
-          if (hrs) {
-            if (cur > 8) {
-              const extraDays = Math.ceil(cur / 8) - 1;
-              hrs.textContent = `${cur}h +${extraDays}d`;
-            } else {
-              hrs.textContent = cur >= 2 ? cur + 'h' : '';
-            }
+          block.style.width = `calc(var(--slot-px) * ${cur})`;
+          if (!isRight) {
+            curStartSlot = endSlot - cur;
+            block.style.left = `calc(var(--slot-px) * ${curStartSlot})`;
           }
+          const hrs = block.querySelector('.task-hrs');
+          if (hrs) hrs.textContent = cur >= 2 ? cur + 'h' : '';
         }
       }
 
@@ -607,12 +622,14 @@
         if (editBtn) editBtn.style.pointerEvents = '';
 
         if (cur !== origHours) {
-          const res = await postJSON(`/schedule/${block.dataset.pk}/resize/`, { total_hours: cur });
+          const body = { total_hours: cur };
+          if (!isRight) body.start_slot = curStartSlot;
+          const res = await postJSON(`/schedule/${block.dataset.pk}/resize/`, body);
           if (res.ok) {
             window.location.reload();
           } else {
-            const dispH = Math.min(origHours, 8);
-            block.style.width = `calc(var(--slot-px) * ${dispH})`;
+            block.style.width = `calc(var(--slot-px) * ${origHours})`;
+            if (!isRight) block.style.left = `calc(var(--slot-px) * ${origStartSlot})`;
             const hrs = block.querySelector('.task-hrs');
             if (hrs) hrs.textContent = origHours >= 2 ? origHours + 'h' : '';
           }
